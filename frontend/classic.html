@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Classic tools · Question Studio</title>
+<link rel="stylesheet" href="/app.css">
+<script src="/shell.js"></script>
+</head>
+<body data-page="classic">
+<div class="app">
+  <aside class="side" id="side"></aside>
+  <div class="scrim" id="scrim"></div>
+  <div class="main">
+    <header class="top">
+      <div class="top-l"><button class="btn icon" id="menu" aria-label="Open menu" data-icon="menu" data-size="18"></button>
+        <h1>Classic tools<small>Form-based version of each feature</small></h1></div>
+      <div class="top-r"><span class="status js-status"><i></i><span>Checking…</span></span>
+        <a class="btn" href="/" data-icon="back" data-size="15">Back to Assistant</a></div>
+    </header>
+    <div class="page"><div class="wrap">
+      <div class="tabs" id="tabs">
+        <button class="tab on" data-t="t-eval">Evaluate question</button><button class="tab" data-t="t-up">Upgrade / degrade</button><button class="tab" data-t="t-gen">Generate</button><button class="tab" data-t="t-paper">Question paper</button>
+      </div>
+
+      <section id="t-eval" class="tab-pane"><div class="panel"><h3>Evaluate a question</h3><p class="desc">Get a quality score, the predicted Bloom level and suggestions.</p>
+        <div class="field"><label for="eq">Question</label><textarea class="input" id="eq" placeholder="e.g. Define what makes a heuristic function admissible in A* search."></textarea></div>
+        <button class="btn primary" id="b-eval">Evaluate and predict level</button></div><div id="eq-out"></div></section>
+
+      <section id="t-up" class="tab-pane" hidden><div class="panel"><h3>Predict, then upgrade or degrade</h3><p class="desc">Predicts the Bloom level and rewrites the question at a higher (harder) or lower (easier) level.</p>
+        <div class="field"><label for="uq">Question</label><textarea class="input" id="uq"></textarea></div>
+        <div class="cols"><div class="field"><label for="ud">Direction</label><select class="input" id="ud"><option value="up">Upgrade (harder)</option><option value="down">Degrade (easier)</option></select></div>
+        <div class="field"><label for="ut">Target level</label><select class="input" id="ut"><option value="">Next level (automatic)</option><option>Remember</option><option>Understand</option><option>Apply</option><option>Analyze</option><option>Evaluate</option><option>Create</option></select></div></div>
+        <button class="btn primary" id="b-up">Predict and rewrite</button></div><div id="up-out"></div></section>
+
+      <section id="t-gen" class="tab-pane" hidden><div class="panel"><h3>Generate questions</h3><p class="desc">Create questions for a topic at a chosen level and difficulty.</p>
+        <div class="field"><label for="gt">Topic</label><input class="input" id="gt" placeholder="e.g. alpha-beta pruning"></div>
+        <div class="cols"><div class="field"><label for="gl">Bloom level</label><select class="input" id="gl"><option>Any</option><option>Remember</option><option>Understand</option><option>Apply</option><option>Analyze</option><option>Evaluate</option><option>Create</option></select></div>
+        <div class="field"><label for="gd">Difficulty</label><select class="input" id="gd"><option>Any</option><option>Easy</option><option>Medium</option><option>Hard</option></select></div></div>
+        <button class="btn primary" id="b-gen">Generate</button></div><div id="gen-out"></div></section>
+      <section id="t-paper" class="tab-pane" hidden><div class="panel"><h3>Analyse a question paper</h3><p class="desc">Upload a question paper as PDF, Word, PowerPoint or a photo. Scanned pages are read with OCR. Every question gets a Bloom level and difficulty.</p>
+        <div class="field"><label for="pf">File (up to 20 MB)</label><input class="input" id="pf" type="file" accept=".pdf,.pptx,.docx,.txt,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,image/*"></div>
+        <button class="btn primary" id="b-paper">Analyse paper</button></div><div id="paper-out"></div></section>
+    </div></div>
+  </div>
+</div>
+<script>
+const {esc,R,icon}=QS;const $=id=>document.getElementById(id);
+function tab(id){document.querySelectorAll(".tab-pane").forEach(s=>s.hidden=s.id!==id);document.querySelectorAll(".tab").forEach(b=>b.classList.toggle("on",b.dataset.t===id))}
+$("tabs").onclick=e=>{const b=e.target.closest(".tab");if(b)tab(b.dataset.t)};
+async function api(path,body,btn,out){
+  const old=btn.textContent;btn.disabled=true;btn.textContent="Working…";
+  try{const r=await fetch("/api/"+path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+    const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);return j}
+  catch(e){$(out).innerHTML=`<div class="callout warn err"><div class="head">${icon("warn",15)}Error</div><p>${esc(e.message)}</p></div>`;return null}
+  finally{btn.disabled=false;btn.textContent=old}}
+$("b-eval").onclick=async e=>{const r=await api("evaluate-question",{question:$("eq").value},e.currentTarget,"eq-out");if(!r)return;
+  $("eq-out").innerHTML=R.evaluation(r)+`<div style="margin-top:12px"><button class="btn sm" id="to-up" data-icon="up" data-size="14">Upgrade this question</button></div>`;
+  const b=$("to-up");b.insertAdjacentHTML("afterbegin",icon("up",14));b.onclick=()=>{$("uq").value=$("eq").value;tab("t-up");$("b-up").click()}};
+$("b-up").onclick=async e=>{const r=await api("upgrade",{question:$("uq").value,target_level:$("ut").value||null,direction:$("ud").value},e.currentTarget,"up-out");if(r)$("up-out").innerHTML=R.upgrade(r)};
+$("b-gen").onclick=async e=>{const r=await api("generate",{topic:$("gt").value,level:$("gl").value,difficulty:$("gd").value},e.currentTarget,"gen-out");
+  if(r)$("gen-out").innerHTML=r.questions.length?R.questions(r,{actions:false}):`<div class="callout"><p>No matches found. Try different wording.</p></div>`};
+$("b-paper").onclick=async e=>{
+  const btn=e.currentTarget,f=$("pf").files[0],out=$("paper-out"),err=t=>out.innerHTML=`<div class="callout warn err"><div class="head">${icon("warn",15)}Error</div><p>${esc(t)}</p></div>`;
+  if(!f)return err("Please choose a file first.");
+  const old=btn.textContent;btn.disabled=true;btn.textContent="Reading the file…";
+  try{const fd=new FormData();fd.append("file",f);const r=await fetch("/api/analyze-paper",{method:"POST",body:fd});
+    let j;try{j=await r.json()}catch(_){throw new Error("The server returned an unexpected response.")}
+    if(!r.ok)throw new Error(j.error||r.statusText);out.innerHTML=R.paper(j,{actions:false})}
+  catch(x){err(x.message)}finally{btn.disabled=false;btn.textContent=old}};
+</script></body></html>

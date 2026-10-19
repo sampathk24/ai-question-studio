@@ -1,0 +1,14 @@
+flask
+scikit-learn
+pandas
+openpyxl
+scipy
+joblib
+requests
+python-dotenv
+pymupdf
+pillow
+numpy
+# OCR (for scanned papers and photos) - install ONE of these:
+#   rapidocr-onnxruntime        (easiest: pip only)
+#   pytesseract  + the Tesseract program

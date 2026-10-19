@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Assistant · Question Studio</title>
+<link rel="stylesheet" href="/app.css">
+<script src="/shell.js"></script>
+</head>
+<body data-page="chat">
+<div class="app">
+  <aside class="side" id="side"></aside>
+  <div class="scrim" id="scrim"></div>
+  <div class="main">
+    <header class="top">
+      <div class="top-l"><button class="btn icon" id="menu" aria-label="Open menu" data-icon="menu" data-size="18"></button>
+        <h1>Assistant<small>Predict Bloom levels, upgrade or degrade questions, scan papers and write questions from your notes</small></h1></div>
+      <div class="top-r"><span class="status js-status"><i></i><span>Checking…</span></span></div>
+    </header>
+
+    <div id="log">
+      <section class="welcome" id="welcome">
+        <h2>What would you like to work on?</h2>
+        <p>Talk to the assistant in plain English. It asks follow-up questions when it needs more detail, and remembers what you are working on.</p>
+        <div class="tiles">
+          <button class="tile" data-send="Generate questions" data-label="Generate questions"><div class="ti" data-icon="spark" data-size="18"></div><b>Generate questions</b><span>Pick a topic, Bloom level and difficulty. I'll ask what I need.</span></button>
+          <button class="tile" data-send="What level is: Define what makes a heuristic function admissible in A* search." data-label="What level is: Define what makes a heuristic function admissible in A* search."><div class="ti" data-icon="chart" data-size="18"></div><b>Predict a question's level</b><span>Paste a question, then upgrade or degrade it.</span></button>
+          <button class="tile pick" data-pick="1"><div class="ti" data-icon="clip" data-size="18"></div><b>Scan a question paper</b><span>PDF, Word or a photo. Scans are read with OCR and every question gets a Bloom level.</span></button>
+          <button class="tile pick" data-pick="1"><div class="ti" data-icon="file" data-size="18"></div><b>Make questions from my notes</b><span>Upload slides, a Word file or a PDF, then tell me the format you need.</span></button>
+        </div>
+      </section>
+      <div class="wrap" id="msgs"></div>
+    </div>
+
+    <div class="composer"><div class="in">
+      <div class="docbar" id="docbar"><span>Working with <b id="docname"></b></span><button class="btn sm" id="dropdoc">Remove</button></div>
+      <div class="box"><button class="attach" id="attach" aria-label="Attach a file" title="Attach a question paper, slides, notes or a photo" data-icon="clip" data-size="18"></button><textarea id="in" rows="1" placeholder="Message the assistant…  e.g. Generate 5 hard questions on minimax at Apply level"></textarea><button class="send" id="send" aria-label="Send" data-icon="send" data-size="17"></button></div>
+      <div class="hint">Enter to send, Shift+Enter for a new line. Attach a question paper (PDF, Word, photo) or study material (PPTX, DOCX, PDF).</div>
+    </div></div>
+  </div>
+</div>
+<input type="file" id="file" accept=".pdf,.pptx,.docx,.txt,.md,.png,.jpg,.jpeg,.webp,.bmp,.tif,.tiff,image/*" hidden>
+<div class="drop" id="drop"><div>Drop your file here<small>Question paper, slides, notes or a photo</small></div></div>
+<script>
+const {esc,fmt,icon,R}=QS;const $=id=>document.getElementById(id);
+const msgs=$("msgs");let ctx={},busy=false;
+const PH="Message the assistant…  e.g. Generate 5 hard questions on minimax at Apply level";
+const OK_EXT=/\.(pdf|pptx|docx|txt|md|png|jpe?g|webp|bmp|tiff?)$/i, MAX_MB=20;
+
+function scroll(){const l=$("log");l.scrollTop=l.scrollHeight}
+function scrollToStart(el){const l=$("log");l.scrollTop=el.getBoundingClientRect().top-l.getBoundingClientRect().top+l.scrollTop-16}
+function refreshWelcome(){$("welcome").hidden=msgs.children.length>0}
+function save(){try{sessionStorage.setItem("qs_chat",JSON.stringify({html:msgs.innerHTML,ctx}))}catch(e){}}
+function restore(){try{const s=JSON.parse(sessionStorage.getItem("qs_chat")||"null");if(s&&s.html){msgs.innerHTML=s.html;ctx=s.ctx||{};const t=$("typing");t&&t.remove();return true}}catch(e){}return false}
+function addUser(t){msgs.insertAdjacentHTML("beforeend",`<div class="msg user"><div class="bubble">${esc(t)}</div></div>`);refreshWelcome();scroll()}
+function addBot(res){
+  const blocks=(res.blocks||[]).map(b=>R[b.type]?R[b.type](b.data):"").join("");
+  const chips=(res.suggestions||[]).map(s=>`<button class="btn sm" data-send="${esc(s.text)}" data-label="${esc(s.label)}">${s.icon?icon(s.icon,14):""}${esc(s.label)}</button>`).join("");
+  msgs.insertAdjacentHTML("beforeend",`<div class="msg bot"><div class="avatar">${icon("mark",16)}</div><div class="body"><div class="txt">${fmt(res.reply)}</div>${blocks}${chips?`<div class="chips">${chips}</div>`:""}</div></div>`);
+  refreshWelcome();scrollToStart(msgs.lastElementChild);
+}
+function typing(on,label){const el=$("typing");
+  if(on&&!el){msgs.insertAdjacentHTML("beforeend",`<div class="msg bot" id="typing"><div class="avatar">${icon("mark",16)}</div><div class="body"><span class="dots"><i></i><i></i><i></i></span><span class="dots-l">${esc(label||"")}</span></div></div>`);scroll()}
+  else if(!on&&el)el.remove()}
+function syncBar(){const d=ctx.doc;$("docbar").classList.toggle("on",!!d);$("docname").textContent=d?d.name:"";
+  $("in").placeholder=ctx.pending&&ctx.pending.ask&&ctx.pending.ask!=="start"?"Type your answer, or tap an option above…":PH}
+function autosize(){const t=$("in");t.style.height="auto";t.style.height=Math.min(t.scrollHeight,160)+"px"}
+function lock(on){busy=on;$("send").disabled=on}
+function fail(e,what){typing(false);addBot({reply:`${what} ${e.message}`,suggestions:[]})}
+
+async function send(text,label){
+  text=(text||"").trim();if(!text||busy)return;
+  lock(true);addUser(label||text);$("in").value="";autosize();typing(true);
+  try{
+    const r=await fetch("/api/chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({message:text,context:ctx})});
+    const j=await r.json();if(!r.ok)throw new Error(j.error||r.statusText);
+    ctx=j.context||{};typing(false);addBot(j);
+  }catch(e){fail(e,"Something went wrong:\n")}
+  lock(false);syncBar();save();$("in").focus();
+}
+
+async function uploadFile(file){
+  if(busy||!file)return;
+  const kb=Math.max(1,Math.round(file.size/1024));
+  if(!OK_EXT.test(file.name)){addUser(`Attached: ${file.name}`);addBot({reply:/\.(doc|ppt|xls)$/i.test(file.name)?"Old Office formats (.doc, .ppt) can't be read directly. Open the file and **Save As .docx / .pptx / .pdf**, then attach it again.":"I can read **PDF, PowerPoint (.pptx), Word (.docx), TXT** and **images (PNG/JPG)**. Please attach one of those."});save();return}
+  if(file.size>MAX_MB*1024*1024){addUser(`Attached: ${file.name}`);addBot({reply:`That file is larger than ${MAX_MB} MB. Please attach a smaller one.`});save();return}
+  lock(true);addUser(`Attached: ${file.name} (${kb} KB)`);
+  typing(true,/\.(png|jpe?g|webp|bmp|tiff?)$/i.test(file.name)||file.name.toLowerCase().endsWith(".pdf")?"Reading your file. Scanned pages use OCR and can take up to a minute…":"Reading your file…");
+  try{
+    const fd=new FormData();fd.append("file",file);fd.append("context",JSON.stringify(ctx));
+    const r=await fetch("/api/upload",{method:"POST",body:fd});
+    let j;try{j=await r.json()}catch(_){throw new Error("The server returned an unexpected response.")}
+    if(!r.ok)throw new Error(j.error||r.statusText);
+    ctx=j.context||{};typing(false);addBot(j);
+  }catch(e){fail(e,"I couldn't read that file.\n")}
+  lock(false);syncBar();save();$("in").focus();
+}
+function reset(){ctx={};msgs.innerHTML="";try{sessionStorage.removeItem("qs_chat")}catch(e){}syncBar();refreshWelcome();$("in").focus()}
+
+$("in").addEventListener("input",autosize);
+$("in").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send($("in").value)}});
+$("send").onclick=()=>send($("in").value);
+$("attach").onclick=()=>$("file").click();
+$("file").onchange=e=>{const f=e.target.files[0];e.target.value="";uploadFile(f)};
+$("dropdoc").onclick=()=>send("forget the document","Remove the document");
+document.addEventListener("click",e=>{
+  if(e.target.closest("[data-pick]")){$("file").click();return}
+  const b=e.target.closest("[data-send]");if(b)send(b.dataset.send,b.dataset.label)});
+document.addEventListener("qs:prompt",e=>send(e.detail));
+document.addEventListener("qs:newchat",reset);
+let dragN=0;
+window.addEventListener("dragenter",e=>{if(e.dataTransfer&&[...e.dataTransfer.types].includes("Files")){dragN++;$("drop").classList.add("on")}});
+window.addEventListener("dragleave",()=>{dragN=Math.max(0,dragN-1);if(!dragN)$("drop").classList.remove("on")});
+window.addEventListener("dragover",e=>e.preventDefault());
+window.addEventListener("drop",e=>{e.preventDefault();dragN=0;$("drop").classList.remove("on");const f=e.dataTransfer&&e.dataTransfer.files[0];if(f)uploadFile(f)});
+
+const params=new URLSearchParams(location.search);
+if(params.get("new"))reset();else restore();
+syncBar();refreshWelcome();scroll();
+if(params.get("q"))send(params.get("q"));
+if(params.toString())history.replaceState(null,"","/");
+$("in").focus();
+</script></body></html>
